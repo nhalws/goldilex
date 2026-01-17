@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 import type { BSetFile, GenerationResponse } from '@/types/bset';
 
 export default function Home() {
@@ -14,6 +15,9 @@ export default function Home() {
   const [isTyping, setIsTyping] = useState(false);
   const [welcomeText, setWelcomeText] = useState('');
   const [showWelcome, setShowWelcome] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isApproved, setIsApproved] = useState<boolean | null>(null);
+  const [username, setUsername] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -44,6 +48,43 @@ export default function Home() {
       typeCharacter();
     }
   }, [showWelcome]);
+
+  // Check authentication and approval
+  useEffect(() => {
+    async function checkAuth() {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        setIsAuthenticated(false);
+        setIsApproved(false);
+        return;
+      }
+      
+      setIsAuthenticated(true);
+      
+      // Get username
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (profile) {
+        setUsername(profile.username);
+      }
+      
+      // Check goldilex access
+      const { data: access } = await supabase
+        .from('goldilex_access')
+        .select('approved')
+        .eq('user_id', user.id)
+        .single();
+      
+      setIsApproved(access?.approved ?? false);
+    }
+    
+    checkAuth();
+  }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
