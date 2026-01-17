@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'goldilex v1.0.0 (goldi)',
-  description: 'Patent-protected legal analysis chatbot - hallucination-free',
+  title: 'goldilex v1 (lex)',
+  description: 'patent-protected legal analysis chatbot - hallucination-free',
   icons: {
     icon: [
       { url: '/glex.ico', sizes: 'any' },
