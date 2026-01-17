@@ -72,9 +72,13 @@ export default function Home() {
         return;
       }
 
+      const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/$/, '');
+      const redirectPath = window.location.pathname + window.location.search + window.location.hash;
+      const emailRedirectTo = `${baseUrl}${redirectPath || '/'}`;
+
       const { error } = await supabase.auth.signInWithOtp({
         email: loginEmail.trim(),
-        options: { emailRedirectTo: window.location.href },
+        options: { emailRedirectTo },
       });
       if (error) {
         setError(error.message);
