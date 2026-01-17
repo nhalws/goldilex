@@ -28,7 +28,7 @@ export default function Home() {
   // Typewriter effect for welcome message
   useEffect(() => {
     if (showWelcome && welcomeText.length === 0) {
-      const fullText = "Hi, I'm goldilex! :-)\n\nI'm a legal analysis chatbot designed as an AI component for briefica. I read briefsets and answer questions about them, without accessing external information. As a result, my answers are essentially hallucination-free! Don't believe me? Ask me anything.";
+      const fullText = "Hi, I'm goldilex! :-)\n\nI'm a legal analysis chatbot designed as an AI component for briefica. I read briefsets and answer questions about them, without accessing external information. As a result, my answers are essentially hallucination-free! Don't believe me? Ask me anything. © 2026 VanHuxt. All rights reserved.";
       let currentIndex = 0;
       
       const typeCharacter = () => {
