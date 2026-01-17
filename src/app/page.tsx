@@ -21,8 +21,7 @@ export default function Home() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const checkAuth = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
+  const applySession = useCallback(async (session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']) => {
     const user = session?.user;
     
     if (!user) {
@@ -33,27 +32,31 @@ export default function Home() {
     }
     
     setIsAuthenticated(true);
-    
-    // Get username
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('user_id', user.id)
-      .single();
-    
+
+    const [{ data: profile }, { data: access }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('username')
+        .eq('user_id', user.id)
+        .single(),
+      supabase
+        .from('goldilex_access')
+        .select('approved')
+        .eq('user_id', user.id)
+        .single(),
+    ]);
+
     if (profile) {
       setUsername(profile.username);
     }
-    
-    // Check goldilex access
-    const { data: access } = await supabase
-      .from('goldilex_access')
-      .select('approved')
-      .eq('user_id', user.id)
-      .single();
-    
+
     setIsApproved(access?.approved ?? false);
   }, []);
+
+  const checkAuth = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    await applySession(session);
+  }, [applySession]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -89,12 +92,12 @@ export default function Home() {
   }, [checkAuth]);
 
   useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
-      checkAuth();
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
 
     return () => authListener?.subscription.unsubscribe();
-  }, [checkAuth]);
+  }, [applySession]);
 
   useEffect(() => {
     const handleFocus = () => checkAuth();
