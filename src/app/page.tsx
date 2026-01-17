@@ -196,6 +196,12 @@ Format bold text like this: **text to bold**`
       <header className="flex-shrink-0 border-b border-[#3a3a3a] bg-[#2a2a2a]">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
+            <a
+              href="https://briefica.com/dashboard"
+              className="text-xs text-gray-400 hover:text-white underline"
+            >
+              ← Back to dashboard
+            </a>
             <div>
               <h1 className="text-base font-semibold" style={{color: '#BF9B30'}}>goldilex</h1>
               <p className="text-xs text-gray-400">v1.0.0 (very alpha!)</p>
