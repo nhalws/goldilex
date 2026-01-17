@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useState, useRef, useEffect } from 'react';
 import type { BSetFile, GenerationResponse } from '@/types/bset';
 
 export default function Home() {
@@ -15,87 +14,8 @@ export default function Home() {
   const [isTyping, setIsTyping] = useState(false);
   const [welcomeText, setWelcomeText] = useState('');
   const [showWelcome, setShowWelcome] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [isApproved, setIsApproved] = useState<boolean | null>(null);
-  const [username, setUsername] = useState<string>('');
-  const [authLoading, setAuthLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginSent, setLoginSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const applySession = useCallback(async (session: Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']) => {
-    const user = session?.user;
-    
-    if (!user) {
-      setIsAuthenticated(false);
-      setIsApproved(false);
-      setUsername('');
-      return;
-    }
-    
-    setIsAuthenticated(true);
-
-    const [{ data: profile }, { data: access }] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('username')
-        .eq('user_id', user.id)
-        .single(),
-      supabase
-        .from('goldilex_access')
-        .select('approved')
-        .eq('user_id', user.id)
-        .single(),
-    ]);
-
-    if (profile) {
-      setUsername(profile.username);
-    }
-
-    setIsApproved(access?.approved ?? false);
-  }, []);
-
-  const checkAuth = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    await applySession(session);
-  }, [applySession]);
-
-  const handleLogin = useCallback(async () => {
-    try {
-      setAuthLoading(true);
-      setError(null);
-      setLoginSent(false);
-
-      if (!loginEmail.trim()) {
-        setError('Please enter an email to continue.');
-        return;
-      }
-
-      const baseEnv = process.env.NEXT_PUBLIC_SITE_URL;
-      if (!baseEnv) {
-        setError('Missing NEXT_PUBLIC_SITE_URL for magic link redirect.');
-        return;
-      }
-      const baseUrl = baseEnv.replace(/\/$/, '');
-      const redirectPath = '/';
-      const emailRedirectTo = `${baseUrl}${redirectPath}`;
-
-      const { error } = await supabase.auth.signInWithOtp({
-        email: loginEmail.trim(),
-        options: { emailRedirectTo },
-      });
-      if (error) {
-        setError(error.message);
-      } else {
-        setLoginSent(true);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to start login');
-    } finally {
-      setAuthLoading(false);
-    }
-  }, [loginEmail]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -124,40 +44,6 @@ export default function Home() {
       typeCharacter();
     }
   }, [showWelcome]);
-
-  // Check authentication and approval
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-
-  useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      applySession(session);
-    });
-
-    return () => authListener?.subscription.unsubscribe();
-  }, [applySession]);
-
-  useEffect(() => {
-    const handleFocus = () => checkAuth();
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [checkAuth]);
-
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        checkAuth();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [checkAuth]);
-
-  useEffect(() => {
-    const interval = setInterval(checkAuth, 8000);
-    return () => clearInterval(interval);
-  }, [checkAuth]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -303,79 +189,6 @@ Format bold text like this: **text to bold**`
       return <span key={idx}>{part}</span>;
     });
   };
-
-  if (isAuthenticated === null || isApproved === null) {
-    return (
-      <div className="flex flex-col h-screen bg-[#1e1e1e] font-['Courier_New',monospace] text-gray-300">
-        <div className="max-w-3xl mx-auto px-4 py-10">
-          <h1 className="text-lg font-semibold mb-3" style={{color: '#BF9B30'}}>goldilex</h1>
-          <p className="text-sm text-gray-400">Checking your session...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="flex flex-col h-screen bg-[#1e1e1e] font-['Courier_New',monospace] text-gray-300">
-        <div className="max-w-3xl mx-auto px-4 py-10">
-          <h1 className="text-lg font-semibold mb-3" style={{color: '#BF9B30'}}>goldilex</h1>
-          <div className="bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl p-6">
-            <p className="text-sm mb-3">Please log in to briefica-web to use goldilex.</p>
-            <p className="text-xs text-gray-500 mb-5">Enter your email to get a magic link (same account as briefica-web).</p>
-            <div className="flex gap-3">
-              <input
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="flex-1 px-3 py-2 bg-[#1e1e1e] border border-[#3a3a3a] rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none"
-              />
-              <button
-                onClick={handleLogin}
-                disabled={authLoading}
-                className="px-4 py-2 rounded-lg text-sm disabled:opacity-60"
-                style={{backgroundColor: '#BF9B30', color: '#1e1e1e'}}
-              >
-                {authLoading ? 'Sending...' : 'Send magic link'}
-              </button>
-              <button
-                onClick={() => checkAuth()}
-                className="px-4 py-2 rounded-lg text-sm"
-                style={{backgroundColor: '#BF9B30', color: '#1e1e1e'}}
-              >
-                Refresh status
-              </button>
-            </div>
-            {loginSent && (
-              <p className="text-xs text-green-400 mt-3">Magic link sent. Check your email.</p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isApproved === false) {
-    return (
-      <div className="flex flex-col h-screen bg-[#1e1e1e] font-['Courier_New',monospace] text-gray-300">
-        <div className="max-w-3xl mx-auto px-4 py-10">
-          <h1 className="text-lg font-semibold mb-3" style={{color: '#BF9B30'}}>goldilex</h1>
-          <div className="bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl p-6">
-            <p className="text-sm mb-3">Hi {username || 'there'}! Your goldilex access is not approved yet.</p>
-            <p className="text-xs text-gray-500 mb-5">Please contact an admin if you believe this is incorrect.</p>
-            <button
-              onClick={() => checkAuth()}
-              className="px-4 py-2 rounded-lg text-sm"
-              style={{backgroundColor: '#BF9B30', color: '#1e1e1e'}}
-            >
-              Refresh status
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col h-screen bg-[#1e1e1e] font-['Courier_New',monospace]">
