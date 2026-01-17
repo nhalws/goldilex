@@ -95,6 +95,12 @@ export default function Home() {
     return () => authListener?.subscription.unsubscribe();
   }, [checkAuth]);
 
+  useEffect(() => {
+    const handleFocus = () => checkAuth();
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [checkAuth]);
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
