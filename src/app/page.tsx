@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import type { Provider } from '@supabase/supabase-js';
 import type { BSetFile, GenerationResponse } from '@/types/bset';
 
 export default function Home() {
@@ -20,6 +19,8 @@ export default function Home() {
   const [isApproved, setIsApproved] = useState<boolean | null>(null);
   const [username, setUsername] = useState<string>('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginSent, setLoginSent] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -63,20 +64,29 @@ export default function Home() {
   const handleLogin = useCallback(async () => {
     try {
       setAuthLoading(true);
-      const provider: Provider = (process.env.NEXT_PUBLIC_SUPABASE_OAUTH_PROVIDER as Provider | undefined) ?? 'google';
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: { redirectTo: window.location.href },
+      setError(null);
+      setLoginSent(false);
+
+      if (!loginEmail.trim()) {
+        setError('Please enter an email to continue.');
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithOtp({
+        email: loginEmail.trim(),
+        options: { emailRedirectTo: window.location.href },
       });
       if (error) {
         setError(error.message);
+      } else {
+        setLoginSent(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to start login');
     } finally {
       setAuthLoading(false);
     }
-  }, []);
+  }, [loginEmail]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -303,15 +313,22 @@ Format bold text like this: **text to bold**`
           <h1 className="text-lg font-semibold mb-3" style={{color: '#BF9B30'}}>goldilex</h1>
           <div className="bg-[#2a2a2a] border border-[#3a3a3a] rounded-xl p-6">
             <p className="text-sm mb-3">Please log in to briefica-web to use goldilex.</p>
-            <p className="text-xs text-gray-500 mb-5">Log in on briefica-web, then reload this page.</p>
+            <p className="text-xs text-gray-500 mb-5">Enter your email to get a magic link (same account as briefica-web).</p>
             <div className="flex gap-3">
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="flex-1 px-3 py-2 bg-[#1e1e1e] border border-[#3a3a3a] rounded-lg text-sm text-gray-200 placeholder-gray-500 focus:outline-none"
+              />
               <button
                 onClick={handleLogin}
                 disabled={authLoading}
                 className="px-4 py-2 rounded-lg text-sm disabled:opacity-60"
                 style={{backgroundColor: '#BF9B30', color: '#1e1e1e'}}
               >
-                {authLoading ? 'Redirecting...' : 'Log in to briefica'}
+                {authLoading ? 'Sending...' : 'Send magic link'}
               </button>
               <button
                 onClick={() => checkAuth()}
@@ -321,6 +338,9 @@ Format bold text like this: **text to bold**`
                 Refresh status
               </button>
             </div>
+            {loginSent && (
+              <p className="text-xs text-green-400 mt-3">Magic link sent. Check your email.</p>
+            )}
           </div>
         </div>
       </div>
