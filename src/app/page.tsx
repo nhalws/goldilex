@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import type { Provider } from '@supabase/supabase-js';
 import type { BSetFile, GenerationResponse } from '@/types/bset';
 
 export default function Home() {
@@ -18,6 +19,7 @@ export default function Home() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [isApproved, setIsApproved] = useState<boolean | null>(null);
   const [username, setUsername] = useState<string>('');
+  const [authLoading, setAuthLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +59,24 @@ export default function Home() {
     const { data: { session } } = await supabase.auth.getSession();
     await applySession(session);
   }, [applySession]);
+
+  const handleLogin = useCallback(async () => {
+    try {
+      setAuthLoading(true);
+      const provider: Provider = (process.env.NEXT_PUBLIC_SUPABASE_OAUTH_PROVIDER as Provider | undefined) ?? 'google';
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { redirectTo: window.location.href },
+      });
+      if (error) {
+        setError(error.message);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start login');
+    } finally {
+      setAuthLoading(false);
+    }
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -285,6 +305,14 @@ Format bold text like this: **text to bold**`
             <p className="text-sm mb-3">Please log in to briefica-web to use goldilex.</p>
             <p className="text-xs text-gray-500 mb-5">Log in on briefica-web, then reload this page.</p>
             <div className="flex gap-3">
+              <button
+                onClick={handleLogin}
+                disabled={authLoading}
+                className="px-4 py-2 rounded-lg text-sm disabled:opacity-60"
+                style={{backgroundColor: '#BF9B30', color: '#1e1e1e'}}
+              >
+                {authLoading ? 'Redirecting...' : 'Log in to briefica'}
+              </button>
               <button
                 onClick={() => checkAuth()}
                 className="px-4 py-2 rounded-lg text-sm"
