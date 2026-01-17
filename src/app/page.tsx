@@ -22,7 +22,8 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const checkAuth = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { session } } = await supabase.auth.getSession();
+    const user = session?.user;
     
     if (!user) {
       setIsAuthenticated(false);
@@ -99,6 +100,21 @@ export default function Home() {
     const handleFocus = () => checkAuth();
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
+  }, [checkAuth]);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkAuth();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [checkAuth]);
+
+  useEffect(() => {
+    const interval = setInterval(checkAuth, 8000);
+    return () => clearInterval(interval);
   }, [checkAuth]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
