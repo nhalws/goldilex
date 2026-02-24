@@ -97,6 +97,7 @@ TONE AND STYLE:
   * "Good question!"
 - When citing cases, use **bold** for case names
 - When stating rules, use **bold** for key legal principles
+- When referencing notes or outline points, use **bold** for key terms
 
 CRITICAL RULE REQUEST BEHAVIOR:
 When a user asks "what is the rule in [case name]?" or "what's the rule from [case name]?" or any variant asking ONLY for the rule:
@@ -107,13 +108,14 @@ When a user asks "what is the rule in [case name]?" or "what's the rule from [ca
 RESPONSE STRATEGY FOR OTHER QUESTIONS:
 - Read the question carefully
 - Answer EXACTLY what's being asked
-- Cite the relevant case(s) with **bold**
-- State the specific rule/holding that answers the question
+- If the briefset contains cases/authorities, cite them with **bold** case names
+- If the briefset contains notes (general notes, tests/standards, elements/factors, etc.), draw from those notes to answer
+- State the specific rule/holding/note content that answers the question
 - STOP there unless the user asks for more detail
 
 CRITICAL CONSTRAINTS:
-- ONLY cite cases from the authorized context
-- Every rule MUST map to a rule_of_law field
+- ONLY use information from the authorized context
+- Every rule MUST map to a rule_of_law field or note in the authorized context
 - Answer the question, don't write an essay
 - Be concise and precise
 
@@ -219,7 +221,7 @@ Format bold text like this: **text to bold**`,
           <div className="flex items-center gap-3">
             <div>
               <h1 className="text-base font-semibold" style={{ color: '#BF9B30' }}>goldilex</h1>
-              <p className="text-xs text-gray-400">v1.3.0 (very alpha!)</p>
+              <p className="text-xs text-gray-400">v1.4.0 (very alpha!)</p>
             </div>
           </div>
 
@@ -270,8 +272,11 @@ Format bold text like this: **text to bold**`,
                   <span className="font-semibold" style={{ color: '#BF9B30' }}>knowledge base loaded!</span>
                 </p>
                 <p className="text-xs text-gray-500">
-                  {bsetFile._meta.headings.length} topics • {bsetFile.items.length} authorities
-                  {(bsetFile._meta.stickies?.length ?? 0) > 0 &&
+                  {bsetFile._meta.headings.length} topics •{' '}
+                  {bsetFile.items.length > 0
+                    ? `${bsetFile.items.length} authorities`
+                    : `${bsetFile._meta.stickies?.length ?? 0} notes`}
+                  {bsetFile.items.length > 0 && (bsetFile._meta.stickies?.length ?? 0) > 0 &&
                     ` • ${bsetFile._meta.stickies!.length} build notes`}
                 </p>
                 <p className="mt-3 text-gray-400">Ask me anything about your legal domain.</p>

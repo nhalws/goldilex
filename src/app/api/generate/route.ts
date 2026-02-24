@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
         const ctrl = new ExternalController(bset_file as BSetFile);
         const context = await ctrl.processQuery(query, target_node_id);
 
-        if (context.reasoning_objects.length === 0) {
+        if (context.reasoning_objects.length === 0 && context.sticky_notes.length === 0) {
           send({ type: 'error', message: 'No authorized reasoning objects found for this query' });
           controller.close();
           return;
