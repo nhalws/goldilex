@@ -5,6 +5,7 @@ import type {
   BSetFile,
   BSetItem,
   TaxonomyNode,
+  TaxonomyEntry,
   ConstraintObject,
   AuthorizedContext,
   Sticky,
@@ -142,6 +143,137 @@ function isStopWord(word: string): boolean {
     'when', 'where', 'why', 'how', 'tell', 'me', 'about', 'case', 'law',
   ]);
   return stopWords.has(word.toLowerCase());
+}
+
+/**
+ * Flatten the nested TaxonomyEntry tree from _meta.taxonomy into a flat
+ * TaxonomyNode array with parent_id populated.
+ *
+ * This is the source of truth for the full heading/sub-heading hierarchy.
+ * _meta.headings only carries root-level nodes; _meta.taxonomy carries
+ * every level with their proper titles.
+ */
+export function flattenTaxonomyEntries(
+  entries: TaxonomyEntry[],
+  parentId: string | null = null
+): TaxonomyNode[] {
+  const result: TaxonomyNode[] = [];
+  for (const entry of entries) {
+    result.push({
+      id: entry.id,
+      title: entry.title,
+      parent_id: parentId,
+      children: (entry.children ?? []).map(c => c.id),
+    });
+    if (entry.children && entry.children.length > 0) {
+      result.push(...flattenTaxonomyEntries(entry.children, entry.id));
+    }
+  }
+  return result;
+}
+
+/**
+ * Build a human-readable table of contents string from a BSetFile.
+ *
+ * Uses _meta.taxonomy for the heading/sub-heading hierarchy and titles, and
+ * _meta.ordering for the definitive assignment of authorities to each node.
+ * Nodes present in ordering but absent from taxonomy (orphan sub-headings)
+ * are appended at the end with their parent inferred from item taxonomy_paths.
+ */
+export function buildTOCString(bsetFile: BSetFile): string {
+  const taxonomyEntries = (bsetFile._meta.taxonomy ?? []) as TaxonomyEntry[];
+  const ordering = (bsetFile._meta.ordering ?? {}) as Record<string, string[]>;
+  const items = bsetFile.items;
+
+  // Build item lookup — supports both raw IDs and ids with/without 'item_' prefix
+  const itemById = new Map<string, BSetItem>();
+  for (const item of items) {
+    itemById.set(item.id, item);
+    if (item.id.startsWith('item_')) {
+      itemById.set(item.id.slice(5), item);
+    } else {
+      itemById.set(`item_${item.id}`, item);
+    }
+  }
+
+  // Resolve ordering IDs → BSetItem
+  const resolveItems = (ids: string[]): BSetItem[] =>
+    ids
+      .map(id => itemById.get(id) ?? itemById.get(id.replace(/^item_/, '')))
+      .filter((it): it is BSetItem => !!it);
+
+  // Track which ordering keys have been rendered
+  const renderedKeys = new Set<string>();
+
+  // Render one level of the taxonomy tree
+  function renderEntry(entry: TaxonomyEntry, depth: number): string {
+    renderedKeys.add(entry.id);
+    const indent = '  '.repeat(depth);
+    const childIndent = '  '.repeat(depth + 1);
+    let out = `${indent}${entry.title}\n`;
+
+    // Authorities assigned directly to this heading
+    const sectionItems = resolveItems(ordering[entry.id] ?? []);
+    for (const item of sectionItems) {
+      // Don't repeat citation if it's identical to the name (common for statutes)
+      const cite = item.citation && item.citation !== item.name ? ` [${item.citation}]` : '';
+      const typeTag = item.type && item.type !== 'case' ? ` (${item.type})` : '';
+      out += `${childIndent}• ${item.name}${cite}${typeTag}\n`;
+    }
+    if (sectionItems.length === 0 && (!entry.children || entry.children.length === 0)) {
+      out += `${childIndent}(no authorities assigned)\n`;
+    }
+
+    // Sub-headings
+    for (const child of entry.children ?? []) {
+      out += renderEntry(child, depth + 1);
+    }
+
+    return out;
+  }
+
+  let toc = 'TABLE OF CONTENTS:\n\n';
+  for (const entry of taxonomyEntries) {
+    toc += renderEntry(entry, 0) + '\n';
+  }
+
+  // Handle ordering keys not covered by taxonomy (orphan sub-headings)
+  // Infer their parent from item taxonomy_paths
+  const orphanKeys = Object.keys(ordering).filter(k => !renderedKeys.has(k) && ordering[k].length > 0);
+  if (orphanKeys.length > 0) {
+    // Build a node-title map from the taxonomy for parent label resolution
+    const nodeTitle = new Map<string, string>();
+    const addTitles = (entries: TaxonomyEntry[]) => {
+      for (const e of entries) {
+        nodeTitle.set(e.id, e.title);
+        addTitles(e.children ?? []);
+      }
+    };
+    addTitles(taxonomyEntries);
+
+    toc += 'ADDITIONAL SECTIONS:\n';
+    for (const key of orphanKeys) {
+      const sectionItems = resolveItems(ordering[key]);
+      if (sectionItems.length === 0) continue;
+
+      // Infer parent from first item's taxonomy_path
+      const firstItem = sectionItems[0];
+      const path = firstItem.taxonomy_path;
+      const parentIdx = path.indexOf(key) - 1;
+      const parentTitle = parentIdx >= 0 ? nodeTitle.get(path[parentIdx]) ?? '' : '';
+      const label = parentTitle ? `${parentTitle} — [subsection]` : '[subsection]';
+
+      toc += `  ${label}\n`;
+      for (const item of sectionItems) {
+        const cite = item.citation && item.citation !== item.name ? ` [${item.citation}]` : '';
+        const typeTag = item.type && item.type !== 'case' ? ` (${item.type})` : '';
+        toc += `    • ${item.name}${cite}${typeTag}\n`;
+      }
+    }
+    toc += '\n';
+  }
+
+  return toc;
 }
 
 /**
@@ -406,7 +538,8 @@ export function assembleAuthorizedContext(
   targetNode: TaxonomyNode,
   reasoningObjects: BSetItem[],
   constraintObjects: ConstraintObject[],
-  stickyNotes: Sticky[] = []
+  stickyNotes: Sticky[] = [],
+  tocString: string = ''
 ): AuthorizedContext {
   return {
     reasoning_objects: reasoningObjects,
@@ -414,6 +547,7 @@ export function assembleAuthorizedContext(
     analytical_path: analyticalPath,
     target_node: targetNode,
     sticky_notes: stickyNotes,
+    toc_string: tocString,
   };
 }
 
@@ -429,13 +563,19 @@ export function generateStructuredInstructions(
   context: AuthorizedContext,
   query: string
 ): string {
-  const { target_node, reasoning_objects, constraint_objects } = context;
+  const { target_node, reasoning_objects, constraint_objects, toc_string } = context;
 
   let instructions = `You are goldilex, a constrained legal reasoning assistant. You ONLY use information from the provided authorized context - you never add outside knowledge or make things up.\n\n`;
   instructions += `PERSONALITY:\n`;
   instructions += `- Always refer to yourself as "goldilex" or use "I" statements (e.g., "I found..." "I analyzed...")\n`;
   instructions += `- Be clear, professional, and helpful\n`;
   instructions += `- Be confident about what's in your knowledge base, but never invent information\n\n`;
+
+  // ── Table of Contents (always included — governs heading/authority mapping) ──
+  if (toc_string) {
+    instructions += toc_string + '\n';
+  }
+
   instructions += `ANALYTICAL DOMAIN: ${target_node.title}\n`;
   instructions += `USER QUERY: ${query}\n\n`;
   instructions += `CRITICAL CONSTRAINTS (NEVER VIOLATE THESE):\n`;
@@ -446,7 +586,12 @@ export function generateStructuredInstructions(
   instructions += `5. If the authorized context doesn't contain enough information to fully answer the query, I will say so clearly.\n`;
   instructions += `6. USER NOTES are GOVERNING TEXT. They represent the user's own authoritative understanding of each authority and ALWAYS take precedence over stored metadata fields (facts, holding, rule_of_law, etc.).\n`;
   instructions += `7. CONFLICT DETECTION IS REQUIRED: For each authority, I must compare the User Notes against the metadata fields. If any User Note contradicts, corrects, or meaningfully diverges from the stored metadata, I MUST flag this by saying exactly: "⚠ Conflict detected in [Authority Name]: Your notes state '[note excerpt]', which differs from the stored metadata '[metadata excerpt]'. I am treating your notes as authoritative."\n`;
-  instructions += `8. The taxonomy_path and heading_id indicate which heading/subheading the authority belongs to.\n\n`;
+  instructions += `8. The TABLE OF CONTENTS above shows every heading, sub-heading, and which authorities belong to each. Use it to answer any question about the structure of the briefset.\n\n`;
+  instructions += `TABLE OF CONTENTS QUERY RULES:\n`;
+  instructions += `- "What authorities are under [heading/sub-heading]?" → list every bullet point shown under that heading in the TABLE OF CONTENTS above, with citation and type.\n`;
+  instructions += `- "What are the rules under [heading]?" → state the rule_of_law for each authority under that heading.\n`;
+  instructions += `- "Compare the authorities under [heading]" or "find tensions/similarities" → compare rule_of_law and holding fields across the listed authorities; call out direct conflicts and shared principles explicitly.\n`;
+  instructions += `- "How many authorities are under [heading]?" → count the bullets under that heading in the TABLE OF CONTENTS.\n\n`;
 
   // Add test/standard constraints
   const tests = constraint_objects.filter(c => c.is_test_standard);
@@ -582,17 +727,28 @@ export class ExternalController {
   constructor(private bsetFile: BSetFile) {}
 
   async processQuery(query: string, targetNodeId?: string): Promise<AuthorizedContext> {
-    const taxonomy = this.bsetFile._meta.headings;
+    // Build the full taxonomy node list from _meta.taxonomy (which has sub-heading
+    // titles) and fall back to _meta.headings (root-only) if taxonomy is absent.
+    const taxonomyEntries = (this.bsetFile._meta.taxonomy ?? []) as TaxonomyEntry[];
+    const fullTaxonomy: TaxonomyNode[] =
+      taxonomyEntries.length > 0
+        ? flattenTaxonomyEntries(taxonomyEntries)
+        : this.bsetFile._meta.headings;
+
+    // Build the table of contents string (used in every prompt)
+    const tocString = buildTOCString(this.bsetFile);
 
     // Step 1: Determine target node (§220-227)
+    // Now searches all nodes (root + sub-headings) so queries like
+    // "fiduciary duties" or "piercing the corporate veil" route correctly.
     let targetNode: TaxonomyNode | null;
     let usedFallback = false;
 
     if (targetNodeId) {
-      targetNode = taxonomy.find(n => n.id === targetNodeId) || null;
+      targetNode = fullTaxonomy.find(n => n.id === targetNodeId) || null;
       usedFallback = !targetNode;
     } else {
-      const result = determineTargetNodeWithConfidence(query, taxonomy);
+      const result = determineTargetNodeWithConfidence(query, fullTaxonomy);
       targetNode = result.node;
       usedFallback = result.isFallback;
     }
@@ -602,7 +758,7 @@ export class ExternalController {
     }
 
     // Step 2: Compute analytical path (§230)
-    const analyticalPath = computeAnalyticalPath(targetNode, taxonomy);
+    const analyticalPath = computeAnalyticalPath(targetNode, fullTaxonomy);
 
     // Step 3: Retrieve reasoning objects (§240)
     //
@@ -645,7 +801,8 @@ export class ExternalController {
       targetNode,
       reasoningObjects,
       constraintObjects,
-      stickyNotes
+      stickyNotes,
+      tocString
     );
 
     return context;

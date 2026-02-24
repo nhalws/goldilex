@@ -21,12 +21,30 @@ export interface BSetItem {
   authority_summary?: string;
 }
 
+// ── Taxonomy hierarchy ──────────────────────────────────────────────────────
+
+/**
+ * A single node as stored in the flat _meta.headings array.
+ * Only root-level nodes live here; sub-headings are in _meta.taxonomy.
+ */
 export interface TaxonomyNode {
   id: string;
   title: string;
   parent_id?: string | null;
   children?: string[];
 }
+
+/**
+ * A node as stored in the nested _meta.taxonomy tree.
+ * Contains full hierarchy with children inline and titles for every level.
+ */
+export interface TaxonomyEntry {
+  id: string;
+  title: string;
+  children: TaxonomyEntry[];
+}
+
+// ── Constraints ─────────────────────────────────────────────────────────────
 
 export interface ConstraintObject {
   id: string;
@@ -80,9 +98,10 @@ export interface Sticky {
 
 export interface BSetMeta {
   headings: TaxonomyNode[];
-  taxonomy?: unknown;
+  /** Full hierarchical tree with sub-heading titles. Richer than headings. */
+  taxonomy?: TaxonomyEntry[] | null;
   stickies?: Sticky[];
-  ordering?: unknown;
+  ordering?: Record<string, string[]> | null;
   highlights?: unknown;
   styles?: unknown;
   typos?: unknown;
@@ -109,7 +128,9 @@ export interface AuthorizedContext {
   constraint_objects: ConstraintObject[];
   analytical_path: string[];
   target_node: TaxonomyNode;
-  sticky_notes: Sticky[]; // Build-panel notes in scope for this query
+  sticky_notes: Sticky[];
+  /** Pre-rendered table of contents string included in every prompt. */
+  toc_string: string;
 }
 
 export interface ValidationResult {
