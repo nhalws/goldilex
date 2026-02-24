@@ -7,6 +7,7 @@ import type {
   TaxonomyNode,
   ConstraintObject,
   AuthorizedContext,
+  Sticky,
 } from '@/types/bset';
 
 /**
@@ -359,6 +360,44 @@ function parseNotesForConstraints(notes: string, path: string[]): ConstraintObje
 }
 
 /**
+ * Extract the plain text from a Sticky's content segments.
+ */
+function extractStickyText(sticky: Sticky): string {
+  return sticky.content
+    .map(seg => seg.text || '')
+    .join('')
+    .trim();
+}
+
+/**
+ * Retrieve sticky notes (build-panel / b-line) whose path overlaps with the
+ * analytical path. Overlap is defined as:
+ *   • exact match
+ *   • sticky path is an ancestor of analytical path (ancestor notes apply down)
+ *   • sticky path is a descendant of analytical path (child notes apply up)
+ *
+ * In broad mode every sticky in the file is returned so nothing is missed
+ * when the taxonomy match was low-confidence.
+ */
+export function retrieveStickyNotes(
+  analyticalPath: string[],
+  stickies: Sticky[],
+  broadMode: boolean = false
+): Sticky[] {
+  if (!stickies || stickies.length === 0) return [];
+  if (broadMode) return [...stickies];
+
+  return stickies.filter(sticky => {
+    const sp = sticky.path;
+    return (
+      pathsMatch(sp, analyticalPath) ||
+      isAnalyticalPathPrefixOfItem(analyticalPath, sp) || // analytical is prefix of sticky → sticky is descendant
+      isAnalyticalPathPrefixOfItem(sp, analyticalPath)   // sticky is prefix of analytical → sticky is ancestor
+    );
+  });
+}
+
+/**
  * Step 5: Assemble authorized reasoning context
  * Implements context assembly (patent §250)
  */
@@ -366,13 +405,15 @@ export function assembleAuthorizedContext(
   analyticalPath: string[],
   targetNode: TaxonomyNode,
   reasoningObjects: BSetItem[],
-  constraintObjects: ConstraintObject[]
+  constraintObjects: ConstraintObject[],
+  stickyNotes: Sticky[] = []
 ): AuthorizedContext {
   return {
     reasoning_objects: reasoningObjects,
     constraint_objects: constraintObjects,
     analytical_path: analyticalPath,
     target_node: targetNode,
+    sticky_notes: stickyNotes,
   };
 }
 
@@ -478,6 +519,55 @@ export function generateStructuredInstructions(
     });
   }
 
+  // ── Build-panel (b-line) sticky notes ────────────────────────────────────
+  const stickies = context.sticky_notes ?? [];
+  if (stickies.length > 0) {
+    const sTests    = stickies.filter(s => s.is_test_standard  || s.note_type === 'test/standard');
+    const sElems    = stickies.filter(s => s.is_element_factor || s.note_type === 'element/factor');
+    const sMacro    = stickies.filter(s => s.is_macro_fork     || s.note_type === 'macro-fork');
+    const sMicro    = stickies.filter(s => s.is_micro_fork     || s.note_type === 'micro-fork');
+    const sFootnote = stickies.filter(s => s.is_footnote       || s.note_type === 'footnote');
+    const sGeneral  = stickies.filter(s =>
+      !s.is_test_standard && !s.is_element_factor &&
+      !s.is_macro_fork    && !s.is_micro_fork     &&
+      !s.is_footnote      && s.note_type === 'general note'
+    );
+
+    instructions += `BUILD PANEL NOTES — b-line (governing analyst notes scoped to this domain):\n`;
+    instructions += `These notes are AUTHORITATIVE and must inform your analysis.\n\n`;
+
+    if (sTests.length > 0) {
+      instructions += `[TESTS & STANDARDS]\n`;
+      sTests.forEach((s, i) => { instructions += `  ${i + 1}. ${extractStickyText(s)}\n`; });
+      instructions += `\n`;
+    }
+    if (sElems.length > 0) {
+      instructions += `[ELEMENTS & FACTORS]\n`;
+      sElems.forEach((s, i) => { instructions += `  ${i + 1}. ${extractStickyText(s)}\n`; });
+      instructions += `\n`;
+    }
+    if (sMacro.length > 0) {
+      instructions += `[MACRO-FORKS — analytical branches]\n`;
+      sMacro.forEach((s, i) => { instructions += `  ${i + 1}. ${extractStickyText(s)}\n`; });
+      instructions += `\n`;
+    }
+    if (sMicro.length > 0) {
+      instructions += `[MICRO-FORKS — sub-branches]\n`;
+      sMicro.forEach((s, i) => { instructions += `  ${i + 1}. ${extractStickyText(s)}\n`; });
+      instructions += `\n`;
+    }
+    if (sFootnote.length > 0) {
+      instructions += `[FOOTNOTES]\n`;
+      sFootnote.forEach((s, i) => { instructions += `  ${i + 1}. ${extractStickyText(s)}\n`; });
+      instructions += `\n`;
+    }
+    if (sGeneral.length > 0) {
+      instructions += `[GENERAL NOTES]\n`;
+      sGeneral.forEach((s, i) => { instructions += `  ${i + 1}. ${extractStickyText(s)}\n`; });
+      instructions += `\n`;
+    }
+  }
+
   instructions += `\nProvide your analysis addressing the query using ONLY the authorized cases listed above.\n`;
   instructions += `Remember: User Notes are GOVERNING. Always check for conflicts and flag them explicitly before proceeding with your analysis.\n`;
 
@@ -545,12 +635,17 @@ export class ExternalController {
     // Use broad mode when retrieval itself was broad so constraints are consistent
     const constraintObjects = retrieveConstraintObjects(analyticalPath, this.bsetFile, usedFallback);
 
+    // Step 4b: Retrieve build-panel sticky notes (b-line)
+    const stickies = this.bsetFile._meta.stickies ?? [];
+    const stickyNotes = retrieveStickyNotes(analyticalPath, stickies, usedFallback);
+
     // Step 5: Assemble context (§250)
     const context = assembleAuthorizedContext(
       analyticalPath,
       targetNode,
       reasoningObjects,
-      constraintObjects
+      constraintObjects,
+      stickyNotes
     );
 
     return context;

@@ -45,14 +45,50 @@ export interface ContentSegment {
   label?: string;
 }
 
+// ── Build-panel (b-line) sticky notes ──────────────────────────────────────
+
+export interface StickyContent {
+  text?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+}
+
+/**
+ * A sticky note from _meta.stickies — the build panel (b-line).
+ * Each sticky is path-scoped and carries one of the defined note types.
+ */
+export interface Sticky {
+  id: string;
+  path: string[];
+  content: StickyContent[];
+  note_type: string; // 'general note' | 'footnote' | 'test/standard' | 'element/factor' | 'macro-fork' | 'micro-fork'
+  is_footnote?: boolean;
+  is_subnote?: boolean;
+  is_sub_subnote?: boolean;
+  is_sub_sub_subnote?: boolean;
+  is_sub_sub_sub_subnote?: boolean;
+  is_element_factor?: boolean;
+  is_test_standard?: boolean;
+  is_micro_fork?: boolean;
+  is_macro_fork?: boolean;
+  is_element_factor_flag?: boolean;
+  created_at?: string;
+}
+
+// ── Meta / file wrapper ─────────────────────────────────────────────────────
+
 export interface BSetMeta {
   headings: TaxonomyNode[];
-  taxonomy?: any;
-  stickies?: any;
-  ordering?: any;
-  highlights?: any;
-  styles?: any;
-  typos?: any;
+  taxonomy?: unknown;
+  stickies?: Sticky[];
+  ordering?: unknown;
+  highlights?: unknown;
+  styles?: unknown;
+  typos?: unknown;
+  grading_key?: unknown;
+  created_at?: string;
+  version?: string;
   format_version?: string;
   domain?: string;
   created?: string;
@@ -73,6 +109,7 @@ export interface AuthorizedContext {
   constraint_objects: ConstraintObject[];
   analytical_path: string[];
   target_node: TaxonomyNode;
+  sticky_notes: Sticky[]; // Build-panel notes in scope for this query
 }
 
 export interface ValidationResult {
