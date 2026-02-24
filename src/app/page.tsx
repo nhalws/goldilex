@@ -198,7 +198,7 @@ Format bold text like this: **text to bold**`
           <div className="flex items-center gap-3">
             <div>
               <h1 className="text-base font-semibold" style={{color: '#BF9B30'}}>goldilex</h1>
-              <p className="text-xs text-gray-400">v1.0.0 (very alpha!)</p>
+              <p className="text-xs text-gray-400">v1.1.0 (very alpha!)</p>
             </div>
           </div>
           
