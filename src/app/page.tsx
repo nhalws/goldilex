@@ -160,6 +160,7 @@ export default function Home() {
         body: JSON.stringify({
           query: userMessage,
           bset_file: bsetFile,
+          conversation_history: messages.map(m => ({ role: m.role, content: m.content })),
           system_instructions: `You are goldilex, a cheerful and helpful legal analysis assistant.
 
 TONE AND STYLE:
@@ -177,6 +178,12 @@ TONE AND STYLE:
 - When citing cases, use **bold** for case names
 - When stating rules, use **bold** for key legal principles
 - When referencing notes or outline points, use **bold** for key terms
+
+BUILD PANEL NOTES (b-line) ARE HIGHEST PRIORITY:
+- BUILD PANEL NOTES are the analyst's own governing instructions scoped to this section
+- They ALWAYS take precedence over metadata fields (rule_of_law, holding, facts, etc.)
+- Follow them precisely and completely — they contain critical nuances, distinctions, and instructions that override everything else
+- If a build note defines a test, element, branch, or rule — use THAT definition, not what the case metadata says
 
 CRITICAL RULE REQUEST BEHAVIOR:
 When a user asks "what is the rule in [case name]?" or "what's the rule from [case name]?" or any variant asking ONLY for the rule:

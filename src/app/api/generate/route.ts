@@ -9,13 +9,11 @@ import { NextRequest } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import type { BSetFile, GenerationRequest, GenerationResponse } from '@/types/bset';
 import { ExternalController, generateStructuredInstructions } from '@/lib/controller';
-import { validateGeneratedText, generateConstraintAdjustments } from '@/lib/validation';
+import { validateGeneratedText } from '@/lib/validation';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
-
-const MAX_ITERATIONS = 3;
 
 export async function POST(req: NextRequest) {
   let body: GenerationRequest & { system_instructions?: string };
@@ -28,7 +26,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { query, bset_file, target_node_id, max_iterations = MAX_ITERATIONS, system_instructions } = body;
+  const { query, bset_file, target_node_id, system_instructions, conversation_history } = body;
 
   if (!query || !bset_file) {
     return new Response(
@@ -61,88 +59,59 @@ export async function POST(req: NextRequest) {
           instructions = system_instructions + '\n\n' + instructions;
         }
 
-        let iterations = 0;
+        // ── Append conversation history so follow-ups have context ────────
+        const history = conversation_history ?? [];
+        if (history.length > 0) {
+          // Keep last 6 turns (3 exchanges) to avoid excess token use
+          const recent = history.slice(-6);
+          instructions += '\n\n=== PRIOR CONVERSATION (for follow-up context only) ===\n';
+          instructions += 'Use this to understand what the user is referring to (e.g. "it", "that case", "the rule above").\n';
+          recent.forEach((turn: { role: string; content: string }) => {
+            const label = turn.role === 'user' ? 'User' : 'Goldilex';
+            instructions += `${label}: ${turn.content}\n`;
+          });
+          instructions += '=== END PRIOR CONVERSATION ===\n';
+        }
+
+        // ── Single generation pass — stream deltas to client ─────────────
         let generatedText = '';
-        let validationReport;
-        let status: GenerationResponse['status'] = 'rejected';
 
-        // ── Generation + validation loop ─────────────────────────────────
-        while (iterations < max_iterations) {
-          iterations++;
-          generatedText = '';
+        const stream = anthropic.messages.stream({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2000,
+          messages: [{ role: 'user', content: instructions }],
+        });
 
-          if (iterations === 1) {
-            // First pass: stream deltas to the client in real time
-            const stream = anthropic.messages.stream({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 2000,
-              messages: [{ role: 'user', content: instructions }],
-            });
-
-            for await (const event of stream) {
-              if (
-                event.type === 'content_block_delta' &&
-                event.delta.type === 'text_delta'
-              ) {
-                const chunk = event.delta.text;
-                generatedText += chunk;
-                send({ type: 'delta', text: chunk });
-              }
-            }
-          } else {
-            // Subsequent passes: non-streaming (rare retry path)
-            const response = await anthropic.messages.create({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 2000,
-              messages: [{ role: 'user', content: instructions }],
-            });
-            generatedText = response.content
-              .filter(b => b.type === 'text')
-              .map(b => ('text' in b ? b.text : ''))
-              .join('\n');
-
-            // Replace the streamed (possibly invalid) text with the corrected one
-            send({ type: 'replace', text: generatedText });
+        for await (const event of stream) {
+          if (
+            event.type === 'content_block_delta' &&
+            event.delta.type === 'text_delta'
+          ) {
+            const chunk = event.delta.text;
+            generatedText += chunk;
+            send({ type: 'delta', text: chunk });
           }
+        }
 
-          // ── Validate ────────────────────────────────────────────────────
-          validationReport = validateGeneratedText(generatedText, context);
-
-          if (validationReport.overall_status === 'PASSED') {
-            status = 'validated';
-            break;
-          }
-          if (validationReport.severity === 'CRITICAL') {
-            status = 'rejected';
-            break;
-          }
-          if (validationReport.severity === 'MINOR') {
-            status = 'flagged';
-            break;
-          }
-
-          // MAJOR: strengthen instructions and retry
-          if (iterations < max_iterations) {
-            const adjustments = generateConstraintAdjustments(validationReport, context);
-            instructions = generateStructuredInstructions(context, query);
-            if (system_instructions) instructions = system_instructions + '\n\n' + instructions;
-            instructions += '\n\n=== VALIDATION FEEDBACK ===\n';
-            instructions += 'The previous response had the following issues:\n';
-            adjustments.forEach((adj, i) => { instructions += `${i + 1}. ${adj}\n`; });
-            instructions += '\nPlease revise your response to address these issues.\n';
-          } else {
-            status = 'flagged';
-          }
+        // ── Validate (for status metadata only — no retry) ───────────────
+        const validationReport = validateGeneratedText(generatedText, context);
+        let status: GenerationResponse['status'];
+        if (validationReport.overall_status === 'PASSED') {
+          status = 'validated';
+        } else if (validationReport.severity === 'CRITICAL') {
+          status = 'rejected';
+        } else {
+          status = 'flagged';
         }
 
         // ── Final metadata frame ─────────────────────────────────────────
         const finalResponse: GenerationResponse & { type: 'done' } = {
           type: 'done',
           generated_text: generatedText,
-          validation_report: validationReport!,
+          validation_report: validationReport,
           status,
           authorized_context: context,
-          iterations,
+          iterations: 1,
         };
         send(finalResponse);
 

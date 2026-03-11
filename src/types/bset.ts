@@ -151,11 +151,17 @@ export interface ValidationCheck {
   missing_element?: string;
 }
 
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface GenerationRequest {
   query: string;
   bset_file: BSetFile;
   target_node_id?: string;
   max_iterations?: number;
+  conversation_history?: ConversationTurn[];
 }
 
 export interface GenerationResponse {
